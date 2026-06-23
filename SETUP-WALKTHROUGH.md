@@ -1,37 +1,86 @@
 # CI/CD Setup Walkthrough
 
-Deploy this ETL Lambda pipeline with **GitHub Actions (CI)** + **AWS CodePipeline (CD)**.
+Follow these **7 steps** to set up GitHub Actions (CI) + AWS CodePipeline (CD) using the shared course code.
 
-**Time:** ~30 min | **Pick one AWS region** (e.g. `eu-north-1`) and stay in it for all steps.
-
----
-
-## Prerequisites
-
-- GitHub account + [new repo](https://github.com/new) (fork or push this code)
-- AWS account with console access
-- Lambda, S3 bucket, and DynamoDB table for ETL (or create during setup)
-
-**Values to note before starting** (replace with yours):
-
-| Variable | Example | Used in |
-|----------|---------|---------|
-| GitHub user/repo | `your-user/data-pipeline-cicd-demo` | CodePipeline Source |
-| Lambda name | `etl-customer-s3-to-dynamodb` | Deploy stage |
-| S3 source bucket | `testingrawdata` | Lambda runtime |
-| DynamoDB table | `etl-test` | Lambda runtime |
-| Artifact bucket | `cicd-artifacts-<account-id>-<region>` | CodePipeline artifacts |
+**Shared code repo:** https://github.com/manangupta12/data-pipeline-cicd-demo  
+**Time:** ~30 min | **AWS region:** pick one (e.g. `eu-north-1`) and use it throughout.
 
 ---
 
-## 1. Push code to GitHub
+## Before you start
+
+| Item | Your value (fill in) |
+|------|----------------------|
+| Your GitHub username | `________________` |
+| Your new repo name | `________________` |
+| AWS Lambda function name | `________________` |
+| S3 source bucket | `________________` |
+| DynamoDB table | `________________` |
+
+**Prerequisites:** GitHub account, AWS console access, Lambda + S3 + DynamoDB (or create in Step 6).
+
+---
+
+## Step 1 — Create a new repo
+
+1. Go to [github.com/new](https://github.com/new)
+2. Repository name: e.g. `my-data-pipeline-cicd`
+3. Visibility: Public or Private
+4. **Do not** add README, `.gitignore`, or license (keeps the repo empty)
+5. Click **Create repository**
+
+---
+
+## Step 2 — Clone the shared code
+
+Clone the **course shared code** (not your new repo yet):
 
 ```bash
-git clone https://github.com/YOUR_GITHUB_USER/data-pipeline-cicd-demo.git
-cd data-pipeline-cicd-demo
+git clone https://github.com/manangupta12/data-pipeline-cicd-demo.git shared-code
+cd shared-code
 ```
 
-**Verify locally (optional):**
+**What's inside:**
+
+| Folder / file | Purpose |
+|---------------|---------|
+| `.github/workflows/ci-data-pipeline.yml` | GitHub Actions CI |
+| `lambda/etl_customer/` | ETL Lambda code |
+| `tests/` | Unit tests |
+| `buildspec.yml` | CodeBuild steps for CD |
+| `infra/` | IAM + CodePipeline JSON templates |
+| `data/` | Sample CSV |
+| `requirements-dev.txt`, `pytest.ini` | Local lint/test config |
+
+---
+
+## Step 3 — Copy shared code into your new repo (local)
+
+```bash
+# From inside shared-code/
+cd ..
+
+git clone https://github.com/YOUR_GITHUB_USER/my-data-pipeline-cicd.git my-repo
+cd my-repo
+
+# Copy everything except .git
+cp -R ../shared-code/.github .
+cp -R ../shared-code/lambda .
+cp -R ../shared-code/tests .
+cp -R ../shared-code/infra .
+cp -R ../shared-code/data .
+cp -R ../shared-code/scripts .
+cp ../shared-code/buildspec.yml .
+cp ../shared-code/requirements-dev.txt .
+cp ../shared-code/pytest.ini .
+cp ../shared-code/.gitignore .
+cp ../shared-code/README.md .
+cp ../shared-code/SETUP-WALKTHROUGH.md .
+```
+
+Replace `YOUR_GITHUB_USER` and `my-data-pipeline-cicd` with your values.
+
+**Optional — verify locally before pushing:**
 
 ```bash
 pip install -r requirements-dev.txt
@@ -39,177 +88,165 @@ flake8 lambda tests --max-line-length=100
 pytest tests/ -v
 ```
 
-Push to `main` → open repo **Actions** tab → confirm **CI - Data Pipeline** workflow is green.
+---
+
+## Step 4 — Push to GitHub
+
+```bash
+git add .
+git commit -m "Add CI/CD data pipeline code from shared course repo"
+git branch -M main
+git push -u origin main
+```
+
+Confirm files on GitHub: `.github/workflows/`, `lambda/`, `tests/`, `buildspec.yml`, `infra/`.
 
 ---
 
-## 2. Application code map
+## Step 5 — Check GitHub Actions triggered
 
-| File | Purpose |
-|------|---------|
-| `lambda/etl_customer/transform.py` | Pure ETL logic — unit tested |
-| `lambda/etl_customer/lambda_function.py` | Lambda handler — S3 → DynamoDB |
-| `tests/test_transform.py` | Unit tests |
-| `buildspec.yml` | CodeBuild: lint → test → zip |
-| `.github/workflows/ci-data-pipeline.yml` | GitHub Actions CI on push/PR |
+1. Open your repo on GitHub → **Actions** tab
+2. You should see workflow **CI - Data Pipeline** running (or completed)
+3. Click the latest run → confirm both jobs pass:
+   - **PEP8 lint (flake8)** — uses commands from `.github/workflows/ci-data-pipeline.yml`
+   - **Unit tests (pytest)** — runs `tests/test_transform.py`
+
+**If no run appears:** ensure `.github/workflows/ci-data-pipeline.yml` was pushed and the push was to `main`.
+
+**If it fails:** open the failed step logs, fix code locally, commit, and push again.
 
 ---
 
-## 3. Lambda (Console)
+## Step 6 — Integrate with AWS CodePipeline
+
+Complete these in the **AWS Console** before creating the pipeline. Use `infra/*.json` as reference.
+
+### 6a. Prepare Lambda (one-time)
 
 **Console:** [Lambda → Functions](https://console.aws.amazon.com/lambda/home)
 
-1. **Create function** (or use existing)
-   - Runtime: **Python 3.12**
-   - Handler: `lambda_function.lambda_handler`
-2. **Configuration → Environment variables**
-   - `S3_BUCKET`, `S3_KEY`, `DYNAMODB_TABLE` (match your data sources)
-3. **Configuration → Permissions**
-   - Attach a role with S3 read + DynamoDB write (see `infra/lambda-permissions-policy.json`)
-4. **Actions → Publish new version** (creates version `1`)
-5. **Aliases → Create alias**
-   - Name: `prod` → Version: `1`
+1. Create function (or use existing) — Python **3.12**, handler `lambda_function.lambda_handler`
+2. **Configuration → Environment variables:** `S3_BUCKET`, `S3_KEY`, `DYNAMODB_TABLE`
+3. **Permissions:** attach S3 read + DynamoDB write (see `infra/lambda-permissions-policy.json`)
+4. **Actions → Publish new version**
+5. **Aliases → Create alias** — name `prod`, version `1`
 
-> CodePipeline Deploy stage in `infra/codepipeline.json` targets this function + alias.
-
----
-
-## 4. AWS CD infrastructure (Console)
-
-Use `infra/*.json` as reference while creating resources in the console.
-
-### 4a. S3 artifact bucket
+### 6b. S3 artifact bucket
 
 **Console:** [S3 → Create bucket](https://s3.console.aws.amazon.com/s3/create)
 
-- Name: `cicd-artifacts-<your-account-id>-<region>`
-- Matches `artifactStore.location` in `infra/codepipeline.json`
+- Name: `cicd-artifacts-<account-id>-<region>` (matches `artifactStore.location` in `infra/codepipeline.json`)
 
-### 4b. GitHub connection
+### 6c. GitHub connection
 
 **Console:** [Developer Tools → Connections](https://console.aws.amazon.com/codesuite/settings/connections)
 
-1. **Create connection** → Provider: **GitHub** → Name: `github-cicd-demo`
-2. **Update pending connection** → authorize GitHub → status **Available**
-3. Copy the **Connection ARN** → paste into `infra/codepipeline-policy.json` and `infra/codepipeline.json` (`__CONNECTION_ARN__`) before creating the pipeline role
+1. **Create connection** → GitHub → name `github-cicd-demo`
+2. **Update pending connection** → authorize → status **Available**
+3. Note the **Connection ARN** for the pipeline
 
-### 4c. IAM roles
+### 6d. IAM roles
 
-**Console:** [IAM → Roles → Create role](https://console.aws.amazon.com/iam/home#/roles)
+**Console:** [IAM → Roles](https://console.aws.amazon.com/iam/home#/roles)
 
-| Role name | Trusted entity | Policy source |
-|-----------|----------------|---------------|
-| `data-pipeline-codebuild-role` | CodeBuild | `infra/codebuild-trust-policy.json` + `infra/codebuild-policy.json` |
-| `data-pipeline-codepipeline-role` | CodePipeline | `infra/codepipeline-trust-policy.json` + `infra/codepipeline-policy.json` |
+| Role | Trust policy | Permissions |
+|------|--------------|-------------|
+| `data-pipeline-codebuild-role` | `infra/codebuild-trust-policy.json` | `infra/codebuild-policy.json` |
+| `data-pipeline-codepipeline-role` | `infra/codepipeline-trust-policy.json` | `infra/codepipeline-policy.json` |
 
-Replace `__ARTIFACT_BUCKET__`, `__AWS_REGION__`, `__AWS_ACCOUNT_ID__`, `__LAMBDA_NAME__`, and `__CONNECTION_ARN__` in the policy JSON before attaching.
+Update placeholders in policy JSON (`__ARTIFACT_BUCKET__`, `__LAMBDA_NAME__`, `__CONNECTION_ARN__`, etc.) to match your account.
 
-### 4d. CodeBuild project
+### 6e. CodeBuild project
 
 **Console:** [CodeBuild → Create project](https://console.aws.amazon.com/codesuite/codebuild/projects/create)
 
 | Setting | Value |
 |---------|-------|
-| Name | `etl-customer-build` (see `infra/codebuild-project.json`) |
-| Source | **CodePipeline** |
-| Environment | Managed image, Ubuntu, Standard, Python support |
-| Buildspec | **Use buildspec file** → `buildspec.yml` |
-| Artifacts | **CodePipeline** |
+| Name | `etl-customer-build` |
+| Source | CodePipeline |
+| Buildspec | `buildspec.yml` (from your repo) |
 | Service role | `data-pipeline-codebuild-role` |
 
-### 4e. CodePipeline (V2)
+See `infra/codebuild-project.json` for full reference.
+
+### 6f. CodePipeline (V2)
 
 **Console:** [CodePipeline → Create pipeline](https://console.aws.amazon.com/codesuite/codepipeline/pipelines/create)
 
-- Pipeline type: **V2**
-- Service role: `data-pipeline-codepipeline-role`
-- Artifact store: your S3 artifact bucket
+| Stage | Provider | Points to |
+|-------|----------|-----------|
+| **Source** | GitHub (CodeStar Connection) | **Your repo** from Step 1, branch `main` |
+| **Build** | CodeBuild | `etl-customer-build` → runs `buildspec.yml` |
+| **Deploy** | AWS Lambda | Your function + alias `prod` |
 
-| Stage | Provider | Config (see `infra/codepipeline.json`) |
-|-------|----------|----------------------------------------|
-| **Source** | GitHub (CodeStar Connection) | Connection, repo `your-user/data-pipeline-cicd-demo`, branch `main` |
-| **Build** | CodeBuild | Project `etl-customer-build` |
-| **Deploy** | AWS Lambda | Function name, Alias `prod`, Strategy **All at once** |
-
-**Release change** or push to `main` to start the first run.
+See `infra/codepipeline.json` for stage layout. Pipeline name: `data-pipeline-etl-cd`.
 
 ---
 
-## 5. Flow on `git push main`
+## Step 7 — Check CodePipeline triggered
 
-```
-Push to main
-  ├─ GitHub Actions (.github/workflows/ci-data-pipeline.yml) → flake8 + pytest
-  └─ CodePipeline (infra/codepipeline.json)
-       ├─ Source  → pull repo via CodeStar connection
-       ├─ Build   → buildspec.yml → function.zip
-       └─ Deploy  → Lambda alias prod
-```
+After Step 6, either **Release change** in CodePipeline or **push a new commit** to `main`.
 
----
-
-## 6. Verify (Console)
-
-### CodePipeline
+### Verify in AWS Console
 
 **Console:** [CodePipeline → `data-pipeline-etl-cd`](https://console.aws.amazon.com/codesuite/codepipeline/pipelines)
 
-- All three stages show **Succeeded** (green)
-- Click **Build** stage → **Details** → open CodeBuild logs (flake8, pytest, zip)
-- Click **Deploy** stage → confirm “Updated function code and published new version”
+| Stage | Expected | What to check |
+|-------|----------|---------------|
+| **Source** | Succeeded | Pulls latest commit from your GitHub repo |
+| **Build** | Succeeded | CodeBuild logs show flake8, pytest, `function.zip` created |
+| **Deploy** | Succeeded | Message: updated function code, published new version |
 
-### Lambda deployed
+### Confirm Lambda updated
 
-**Console:** [Lambda → your function → Versions](https://console.aws.amazon.com/lambda/home)
+**Console:** [Lambda → your function](https://console.aws.amazon.com/lambda/home)
 
-- **Last modified** timestamp updated after pipeline run
-- **Aliases** tab → `prod` points to a new version number
+- **Last modified** time is recent
+- **Aliases** → `prod` points to a new version
 
-### Test invoke
+### Test the pipeline output
 
-**Console:** Lambda → **Test** tab (or **Test** button)
+**Console:** Lambda → **Test** with event:
 
-- Create test event, e.g.:
-  ```json
-  {"bucket": "testingrawdata", "key": "data-etl-test1/customer.csv"}
-  ```
-- **Test** → check response shows `"message": "ETL completed successfully"`
+```json
+{"bucket": "YOUR_S3_BUCKET", "key": "data-etl-test1/customer.csv"}
+```
 
-### DynamoDB output
+**Console:** [DynamoDB → Explore items](https://console.aws.amazon.com/dynamodbv2/home) — confirm records written.
 
-**Console:** [DynamoDB → Tables → `etl-test` → Explore items](https://console.aws.amazon.com/dynamodbv2/home)
+---
 
-- Confirm customer records loaded after invoke
+## End-to-end flow
 
-### GitHub CI
-
-**GitHub:** repo → **Actions** → latest **CI - Data Pipeline** run → green check
+```
+Step 4: git push main
+    │
+    ├─ Step 5: GitHub Actions (.github/workflows/ci-data-pipeline.yml)
+    │           flake8 + pytest
+    │
+    └─ Step 7: CodePipeline (infra/codepipeline.json)
+                Source → Build (buildspec.yml) → Deploy (Lambda prod)
+```
 
 ---
 
 ## Customize
 
-| Change | Edit |
-|--------|------|
+| Goal | Edit |
+|------|------|
 | Lint/test rules | `buildspec.yml` + `.github/workflows/ci-data-pipeline.yml` |
-| Deploy target | `infra/codepipeline.json` → Deploy `FunctionName` / `FunctionAlias` |
-| Trigger branch | `infra/codepipeline.json` → Source `BranchName` |
-| Manual approval | CodePipeline → Edit → Add **Approval** stage between Build and Deploy |
+| Deploy target | `infra/codepipeline.json` Deploy stage |
+| Different branch | Source `BranchName` in `infra/codepipeline.json` |
+| Manual approval | CodePipeline → Edit → Add Approval stage before Deploy |
 
 ---
 
 ## Cleanup (Console)
 
-| Resource | Console path |
-|----------|--------------|
-| Pipeline | CodePipeline → `data-pipeline-etl-cd` → Delete |
-| CodeBuild | CodeBuild → `etl-customer-build` → Delete |
-| Artifact bucket | S3 → empty bucket → Delete |
-| IAM roles | IAM → Roles → delete `data-pipeline-codepipeline-role`, `data-pipeline-codebuild-role` |
-| Connection | Developer Tools → Connections → delete `github-cicd-demo` |
+Delete in order: CodePipeline → CodeBuild project → S3 artifact bucket → IAM roles → GitHub connection.
 
 ---
 
-## Optional: CLI scripts
+## Optional CLI automation
 
-For automated provisioning, see `scripts/setup-aws.sh` and `scripts/render-infra.sh` (not required if using the console steps above).
+See `scripts/setup-aws.sh` if you prefer CLI over console for Step 6.

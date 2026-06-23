@@ -1,0 +1,6 @@
+customer_id,name,email,city
+C001,Alice Johnson,alice@example.com,Seattle
+C002,Bob Martinez,bob@example.com,Austin
+C003,Carol Chen,carol@example.com,Chicago
+C004,David Kim,david@example.com,Denver
+C005,Eva Patel,eva@example.com,Boston

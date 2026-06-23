@@ -3,7 +3,7 @@ name: CI - Data Pipeline
 on:
   push:
     branches: [main, develop]
-    path:
+    paths:
       - 'lambda/**'
       - 'tests/**'
       - '.github/workflows/**'

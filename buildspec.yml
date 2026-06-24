@@ -16,12 +16,9 @@ phases:
 
   build:
     commands:
-      - echo "Packaging Lambda deployment artifact..."
-      - cd lambda/etl_customer
-      - zip -r ../../function.zip .
-      - cd ../..
+      - echo "Preparing Lambda deployment artifact..."
 
 artifacts:
+  base-directory: lambda/etl_customer
   files:
-    - function.zip
-  name: etl-customer-artifact
+    - "**/*"
